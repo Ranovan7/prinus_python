@@ -14,7 +14,6 @@ from telegram import Bot
 
 from apps import app, db
 from apps.models import Logger, Raw, Tenant, Periodik
-from apps.credentials import TELEGRAM_TEST_ID, PRINUSBOT_TOKEN
 
 bws_sul2 = ("bwssul2", "limboto1029")
 
@@ -38,13 +37,13 @@ def telegram_warning(command):
         message = "Testing Telegram Bot"
         reports = tenants_report()
         message += f"\n{reports}"
-        bot = Bot(token=PRINUSBOT_TOKEN)
-        bot.sendMessage(TELEGRAM_TEST_ID,
+        bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
+        bot.sendMessage(app.config['TELEGRAM_TEST_ID'],
                         text=message)
     elif command == 'info':
         print("Testing gathering data")
-        bot = Bot(token=PRINUSBOT_TOKEN)
-        res = bot.sendMessage(TELEGRAM_TEST_ID, text="Testing")
+        bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
+        res = bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Testing")
         print(res)
     # elif command == 'info_ch':
     #     # info = info_ch()

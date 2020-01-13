@@ -8,6 +8,8 @@ class Config(object):
     CSRF_ENABLED = True
     SECRET_KEY = os.environ['SECRET_KEY']
     SQLALCHEMY_DATABASE_URI = os.environ['DATABASE_URL']
+    TELEGRAM_TEST_ID = os.environ['TELEGRAM_TEST_ID']
+    PRINUSBOT_TOKEN = os.environ['PRINUSBOT_TOKEN']
 
 
 class ProductionConfig(Config):
