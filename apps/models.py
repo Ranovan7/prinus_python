@@ -40,6 +40,10 @@ class Tenant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nama = db.Column(db.String(35), index=True, unique=True, nullable=False)
     slug = db.Column(db.String(12), index=True, unique=True, nullable=False)
+    telegram_alert_id = db.Column(db.Integer)
+    telegram_alert_group = db.Column(db.Text)
+    telegram_info_id = db.Column(db.Integer)
+    telegram_info_group = db.Column(db.Text)
 
     locations = relationship('Location', backref='location_tenant')
     loggers = relationship('Logger', backref='logger_tenant')
@@ -92,8 +96,8 @@ class Location(db.Model):
     tenant_id = db.Column(db.Integer, db.ForeignKey('tenant.id'), nullable=True)
 
     # logger_tenant = relationship('Tenant', back_populates='locations')
-    # periodik = relationship('Periodik', back_populates='lokasi',
-    #                         order_by="desc(Periodik.sampling)")
+    location_periodik = relationship('Periodik', back_populates='location',
+                            order_by="desc(Periodik.sampling)")
 
     created_at = db.Column(db.DateTime)
     modified_at = db.Column(db.DateTime)
@@ -123,7 +127,7 @@ class Periodik(db.Model):
     received = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     logger = relationship("Logger", back_populates="logger_periodik")
-    # lokasi = relationship("Location", back_populates="location_periodik")
+    location = relationship("Location", back_populates="location_periodik")
     # periodik_tenant = relationship("Tenant", back_populates="periodiks")
     # __table_args__ = (db.UniqueConstraint('device_sn', 'sampling',
     #                                       name='_device_sampling'),)
