@@ -90,9 +90,67 @@ def telegram(command):
 
 def periodik_report(time):
     ''' Message Tenants about last 2 hour rain and water level '''
+    start = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 2}:00:00", "%Y-%m-%d %H:%M:%S")
+    end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 1}:59:00", "%Y-%m-%d %H:%M:%S")
+
     bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
-    pass
-    bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending 2-Hourly Reports to All Tenants")
+
+    periodik_result = {}
+    loggers = Logger.query.order_by(Logger.id).all()
+    periodics = Periodik.query.filter(Periodik.sampling.between(start, end))
+
+    for log in loggers:
+        location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
+        pos_tipe = POS_NAME[log.location.tipe] if log.location and log.location.tipe else "Lain"
+        if log.tenant and log.tenant.nama not in periodik_result:
+            periodik_result[log.tenant.nama] = {
+                'logger': {
+                    'Klimatologi': {},
+                    'Hujan': {},
+                    'TMA': {},
+                    'Lain': {}
+                },
+                'telegram_group': log.tenant.telegram_alert_group,
+                'telegram_id': log.tenant.telegram_alert_id
+            }
+        if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger'][pos_tipe]:
+            periodik_result[log.tenant.nama]['logger'][pos_tipe][location_name] = 0
+
+    for period in periodics:
+        location_name = period.location.nama if period.location else f"Lokasi {period.logger_sn}"
+        pos_tipe = POS_NAME[period.location.tipe] if period.location and period.location.tipe else "Lain"
+
+        val = 0
+        if pos_tipe in ['Klimatologi', 'Hujan']:
+            val = period.rain or 0
+        elif pos_tipe in ['TMA']:
+            val = period.wlev or 0
+        elif pos_tipe == 'Lain':
+            val = period.rain or period.wlev or 0
+
+        periodik_result[period.periodik_tenant.nama]['logger'][pos_tipe][location_name] += val
+
+    for ten, info in periodik_result.items():
+        final = '''*%(ten)s*\n*Data 2 Jam Terakhir*\n%(tgl)s
+        ''' % {'ten': ten, 'tgl': start.strftime('%d %b %Y')}
+        final += f"({start.strftime('%H:%M')}) - ({end.strftime('%H:%M')})"
+        for tipe, pos in info['logger'].items():
+            message = ""
+            i = 0
+            all = 0
+            for name, count in pos.items():
+                message += f"\n- {name} : {count} {tipe}\n"
+                i += 1
+            if message:
+                final += f"\n# Pos {tipe} \n"
+                final += message
+        try:
+            logging.debug(f"TeleRep-send to {ten}")
+            # bot.sendMessage(info['telegram_id'], text=final)
+        except Exception as e:
+            logging.debug(f"TeleRep-send Error ({ten}) : {e}")
+        print(final)
+    # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending 2-Hourly Reports to All Tenants")
 
 
 def periodik_count_report(time):
@@ -145,19 +203,18 @@ def periodik_count_report(time):
                 final += f"\n# Pos {tipe} ({avg}%) \n"
                 final += message
         try:
-            logging.debug(f"Sending Alert to {ten}")
+            logging.debug(f"TeleCount-send to {ten}")
             # bot.sendMessage(info['telegram_id'], text=final)
         except Exception as e:
-            logging.debug(f"Error at Sending Alert : {e}")
+            logging.debug(f"TeleCount-send Error ({ten}) : {e}")
         print(final)
-
     # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Daily Count Reports to All Tenants")
 
 
 def rain_alert(time):
     ''' Message Tenants about heavy rain per location '''
-    start = datetime.datetime.strptime(f"{time.year}-{time.month}-{time.day} {time.hour - 1}:00:00", "%Y-%m-%d %H:%M:%S")
-    end = datetime.datetime.strptime(f"{time.year}-{time.month}-{time.day} {time.hour - 1}:55:00", "%Y-%m-%d %H:%M:%S")
+    start = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 1}:00:00", "%Y-%m-%d %H:%M:%S")
+    end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 1}:59:00", "%Y-%m-%d %H:%M:%S")
 
     bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
 
@@ -188,13 +245,12 @@ def rain_alert(time):
                 message += f"Terjadi Hujan Lebat di {loc} dengan intensitas {rain} mm\n"
         if info['telegram_id'] and message:
             try:
-                logging.debug(f"Sending Alert to {ten}")
+                logging.debug(f"TeleWarn-send to {ten}")
                 final = header + message
                 bot.sendMessage(info['telegram_id'], text=final)
             except Exception as e:
-                logging.debug(f"Error at Sending Alert : {e}")
+                logging.debug(f"TeleWarn-send Error ({ten}) : {e}")
         print(header)
-
     # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Alert to All Tenants")
 
 
