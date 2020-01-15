@@ -90,67 +90,102 @@ def telegram(command):
 
 def periodik_report(time):
     ''' Message Tenants about last 2 hour rain and water level '''
-    start = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 2}:00:00", "%Y-%m-%d %H:%M:%S")
-    end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 1}:59:00", "%Y-%m-%d %H:%M:%S")
-
     bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
 
+    ch_report(time, bot)
+    tma_report(time, bot)
+
+    # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending 2-Hourly Reports to All Tenants")
+
+
+def ch_report(time, bot):
+    start = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 2}:00:00", "%Y-%m-%d %H:%M:%S")
+    end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour}:00:00", "%Y-%m-%d %H:%M:%S")
+
     periodik_result = {}
-    loggers = Logger.query.order_by(Logger.id).all()
-    periodics = Periodik.query.filter(Periodik.sampling.between(start, end))
+    loggers = Logger.query.filter(Logger.tipe == 'arr').order_by(Logger.id).all()
+    periodics = Periodik.query.filter(Periodik.sampling.between(start, end), Periodik.rain > 0)
 
     for log in loggers:
         location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
-        pos_tipe = POS_NAME[log.location.tipe] if log.location and log.location.tipe else "Lain"
         if log.tenant and log.tenant.nama not in periodik_result:
             periodik_result[log.tenant.nama] = {
-                'logger': {
-                    'Klimatologi': {},
-                    'Hujan': {},
-                    'TMA': {},
-                    'Lain': {}
-                },
+                'logger': {},
                 'telegram_group': log.tenant.telegram_alert_group,
                 'telegram_id': log.tenant.telegram_alert_id
             }
-        if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger'][pos_tipe]:
-            periodik_result[log.tenant.nama]['logger'][pos_tipe][location_name] = 0
+        if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger']:
+            periodik_result[log.tenant.nama]['logger'][location_name] = 0
 
     for period in periodics:
+        if period.logger.tipe == 'awlr':
+            # don't include this in production
+            continue
+
         location_name = period.location.nama if period.location else f"Lokasi {period.logger_sn}"
-        pos_tipe = POS_NAME[period.location.tipe] if period.location and period.location.tipe else "Lain"
-
-        val = 0
-        if pos_tipe in ['Klimatologi', 'Hujan']:
-            val = period.rain or 0
-        elif pos_tipe in ['TMA']:
-            val = period.wlev or 0
-        elif pos_tipe == 'Lain':
-            val = period.rain or period.wlev or 0
-
-        periodik_result[period.periodik_tenant.nama]['logger'][pos_tipe][location_name] += val
+        val = period.rain or 0
+        periodik_result[period.periodik_tenant.nama]['logger'][location_name] += val
 
     for ten, info in periodik_result.items():
-        final = '''*%(ten)s*\n*Data 2 Jam Terakhir*\n%(tgl)s
-        ''' % {'ten': ten, 'tgl': start.strftime('%d %b %Y')}
-        final += f"({start.strftime('%H:%M')}) - ({end.strftime('%H:%M')})"
-        for tipe, pos in info['logger'].items():
-            message = ""
-            i = 0
-            all = 0
-            for name, count in pos.items():
-                message += f"\n- {name} : {count} {tipe}\n"
-                i += 1
-            if message:
-                final += f"\n# Pos {tipe} \n"
-                final += message
+        final = f"*Curah Hujan {start.strftime('%d %b %Y')}*\n*Data 2 Jam Terakhir*\n"
+        final += f"Akumulasi : ({start.strftime('%H:%M')}) - ({end.strftime('%H:%M')})\n"
+        message = ""
+        i = 0
+        for name, count in info['logger'].items():
+            i += 1
+            message += f"\n{i}. {name} : {round(count, 2)} mm"
+        if message:
+            final += message
         try:
             logging.debug(f"TeleRep-send to {ten}")
             # bot.sendMessage(info['telegram_id'], text=final)
         except Exception as e:
             logging.debug(f"TeleRep-send Error ({ten}) : {e}")
         print(final)
-    # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending 2-Hourly Reports to All Tenants")
+        print()
+
+
+def tma_report(time, bot):
+    start = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 2}:00:00", "%Y-%m-%d %H:%M:%S")
+    end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour}:00:00", "%Y-%m-%d %H:%M:%S")
+
+    periodik_result = {}
+    loggers = Logger.query.filter(Logger.tipe == 'awlr').order_by(Logger.id).all()
+
+    for log in loggers:
+        location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
+        if log.tenant and log.tenant.nama not in periodik_result:
+            periodik_result[log.tenant.nama] = {
+                'logger': {},
+                'telegram_group': log.tenant.telegram_alert_group,
+                'telegram_id': log.tenant.telegram_alert_id
+            }
+
+        latest = Periodik.query.filter(Periodik.logger_sn == log.sn).order_by(desc(Periodik.sampling)).first()
+        if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger']:
+            if latest:
+                sample = latest.sampling.strftime('%H:%M, %d %b %Y')
+                periodik_result[log.tenant.nama]['logger'][location_name] = f"{latest.wlev or '-'}m, pada {sample}"
+            else:
+                periodik_result[log.tenant.nama]['logger'][location_name] = "Belum Ada Data"
+
+    for ten, info in periodik_result.items():
+        final = f"*TMA*\n*Data 2 Jam Terakhir*\n{start.strftime('%d %b %Y')}"
+        final += f", ({start.strftime('%H:%M')}) - ({end.strftime('%H:%M')})"
+        message = ""
+        i = 0
+        for name, count in info['logger'].items():
+            i += 1
+            message += f"\n{i}. {name} : {count}"
+        if message:
+            final += message
+        try:
+            logging.debug(f"TeleRep-send to {ten}")
+            # bot.sendMessage(info['telegram_id'], text=final)
+        except Exception as e:
+            logging.debug(f"TeleRep-send Error ({ten}) : {e}")
+        print(final)
+        print()
 
 
 def periodik_count_report(time):
