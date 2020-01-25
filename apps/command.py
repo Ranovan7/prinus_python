@@ -111,8 +111,8 @@ def ch_report(time, bot):
         if log.tenant and log.tenant.nama not in periodik_result:
             periodik_result[log.tenant.nama] = {
                 'logger': {},
-                'telegram_group': log.tenant.telegram_alert_group,
-                'telegram_id': log.tenant.telegram_alert_id
+                'telegram_group': log.tenant.telegram_info_group,
+                'telegram_id': log.tenant.telegram_info_id
             }
         if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger']:
             periodik_result[log.tenant.nama]['logger'][location_name] = 0
@@ -138,7 +138,7 @@ def ch_report(time, bot):
             final += message
         try:
             logging.debug(f"TeleRep-send to {ten}")
-            # bot.sendMessage(info['telegram_id'], text=final)
+            bot.sendMessage(info['telegram_id'], text=final)
         except Exception as e:
             logging.debug(f"TeleRep-send Error ({ten}) : {e}")
         print(final)
@@ -157,8 +157,8 @@ def tma_report(time, bot):
         if log.tenant and log.tenant.nama not in periodik_result:
             periodik_result[log.tenant.nama] = {
                 'logger': {},
-                'telegram_group': log.tenant.telegram_alert_group,
-                'telegram_id': log.tenant.telegram_alert_id
+                'telegram_group': log.tenant.telegram_info_group,
+                'telegram_id': log.tenant.telegram_info_id
             }
 
         latest = Periodik.query.filter(Periodik.logger_sn == log.sn).order_by(desc(Periodik.sampling)).first()
@@ -181,7 +181,7 @@ def tma_report(time, bot):
             final += message
         try:
             logging.debug(f"TeleRep-send to {ten}")
-            # bot.sendMessage(info['telegram_id'], text=final)
+            bot.sendMessage(info['telegram_id'], text=final)
         except Exception as e:
             logging.debug(f"TeleRep-send Error ({ten}) : {e}")
         print(final)
@@ -210,8 +210,8 @@ def periodik_count_report(time):
                     'TMA': {},
                     'Lain': {}
                 },
-                'telegram_group': log.tenant.telegram_alert_group,
-                'telegram_id': log.tenant.telegram_alert_id
+                'telegram_group': log.tenant.telegram_info_group,
+                'telegram_id': log.tenant.telegram_info_id
             }
         if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger'][pos_tipe]:
             periodik_result[log.tenant.nama]['logger'][pos_tipe][location_name] = 0
@@ -239,11 +239,11 @@ def periodik_count_report(time):
                 final += message
         try:
             logging.debug(f"TeleCount-send to {ten}")
-            # bot.sendMessage(info['telegram_id'], text=final)
+            bot.sendMessage(info['telegram_id'], text=final)
         except Exception as e:
             logging.debug(f"TeleCount-send Error ({ten}) : {e}")
         print(final)
-    # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Daily Count Reports to All Tenants")
+    bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Daily Count Reports to All Tenants")
 
 
 def rain_alert(time):
