@@ -137,8 +137,8 @@ def ch_report(time, bot):
         if message:
             final += message
         try:
-            logging.debug(f"TeleRep-send to {ten}")
             bot.sendMessage(info['telegram_id'], text=final)
+            logging.debug(f"TeleRep-send to {ten}")
         except Exception as e:
             logging.debug(f"TeleRep-send Error ({ten}) : {e}")
         print(final)
@@ -180,8 +180,8 @@ def tma_report(time, bot):
         if message:
             final += message
         try:
-            logging.debug(f"TeleRep-send to {ten}")
             bot.sendMessage(info['telegram_id'], text=final)
+            logging.debug(f"TeleRep-send to {ten}")
         except Exception as e:
             logging.debug(f"TeleRep-send Error ({ten}) : {e}")
         print(final)
