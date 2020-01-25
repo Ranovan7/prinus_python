@@ -56,8 +56,8 @@ def telegram_warning(command):
 @app.cli.command()
 @click.argument('command')
 def telegram(command):
-    # time = datetime.datetime.now()
-    time = datetime.datetime.strptime("2020-01-09 11:00:00", "%Y-%m-%d %H:%M:%S")
+    time = datetime.datetime.now()
+    # time = datetime.datetime.strptime("2020-01-09 11:00:00", "%Y-%m-%d %H:%M:%S")
     if command == 'test':
         print(persentase_hadir_data(tgl))
     elif command == 'info_ch':
