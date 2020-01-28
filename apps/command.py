@@ -9,6 +9,7 @@ import paho.mqtt.subscribe as subscribe
 
 from sqlalchemy import func, or_, desc
 from sqlalchemy.exc import IntegrityError
+from pytz import timezone
 
 from telegram import Bot
 
@@ -35,22 +36,25 @@ logging.basicConfig(
         level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(message)s')
 
 
-@app.cli.command()
-@click.argument('command')
-def telegram_warning(command):
-    # tgl = datetime.date.today() - datetime.timedelta(days=1)
-    if command == 'alert':
-        print("Sending Test Message")
-        message = "Testing Telegram Bot"
-        reports = rain_alert()
-        message += f"\n{reports}"
-        # bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
-        # bot.sendMessage(app.config['TELEGRAM_TEST_ID'],
-        #                 text=message)
-    elif command == 'test':
-        print("Testing gathering data")
-        # bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
-        # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Testing")
+def utc2local(time, tz="Asia/Jakarta"):
+    ''' return with year-month-day hours:minutes:seconds in local(tz) timezone '''
+    time = time.astimezone(timezone(tz))
+    return time
+
+
+def local2utc(time):
+    ''' return with year-month-day hours:minutes:seconds in local(tz) timezone '''
+    time = time.astimezone(timezone('UTC'))
+    return time
+
+
+def getstarttime(time):
+    ''' get starting time of the data '''
+    if time.hour < 7:
+        res = datetime.datetime.strptime(f"{time.year}-{time.month}-{time.day - 1} 07:00:00", "%Y-%m-%d %H:%M:%S")
+    else:
+        res = datetime.datetime.strptime(f"{time.year}-{time.month}-{time.day} 07:00:00", "%Y-%m-%d %H:%M:%S")
+    return res
 
 
 @app.cli.command()
@@ -99,36 +103,39 @@ def periodik_report(time):
 
 
 def ch_report(time, bot):
-    start = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 2}:00:00", "%Y-%m-%d %H:%M:%S")
-    end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour}:00:00", "%Y-%m-%d %H:%M:%S")
-
     periodik_result = {}
-    loggers = Logger.query.filter(Logger.tipe == 'arr').order_by(Logger.id).all()
-    periodics = Periodik.query.filter(Periodik.sampling.between(start, end), Periodik.rain > 0)
+    tenants = Tenant.query.order_by(Tenant.id).all()
 
-    for log in loggers:
-        location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
-        if log.tenant and log.tenant.nama not in periodik_result:
-            periodik_result[log.tenant.nama] = {
-                'logger': {},
-                'telegram_group': log.tenant.telegram_info_group,
-                'telegram_id': log.tenant.telegram_info_id
-            }
-        if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger']:
-            periodik_result[log.tenant.nama]['logger'][location_name] = 0
+    for ten in tenants:
+        tz = ten.timezone or "Asia/Jakarta"
+        localtime = utc2local(time, tz=tz)
+        end = datetime.datetime.strptime(f"{localtime.strftime('%Y-%m-%d')} {localtime.hour}:00:00", "%Y-%m-%d %H:%M:%S")
+        start = getstarttime(end)
 
-    for period in periodics:
-        if period.logger.tipe == 'awlr':
-            # don't include this in production
-            continue
+        periodik_result[ten.nama] = {
+            'logger': {},
+            'start': start,
+            'end': end,
+            'telegram_group': ten.telegram_info_group,
+            'telegram_id': ten.telegram_info_id
+        }
 
-        location_name = period.location.nama if period.location else f"Lokasi {period.logger_sn}"
-        val = period.rain or 0
-        periodik_result[period.periodik_tenant.nama]['logger'][location_name] += val
+        periodics = Periodik.query.filter(
+                                    Periodik.sampling.between(local2utc(start), local2utc(end)),
+                                    Periodik.rain > 0,
+                                    Periodik.tenant_id == ten.id).all()
+
+        for period in periodics:
+            location_name = period.logger.location.nama if period.logger.location else f"Lokasi {period.logger.sn}"
+
+            if location_name in periodik_result[period.periodik_tenant.nama]['logger']:
+                periodik_result[period.periodik_tenant.nama]['logger'][location_name] += period.rain
+            else:
+                periodik_result[period.periodik_tenant.nama]['logger'][location_name] = period.rain
 
     for ten, info in periodik_result.items():
-        final = f"*Curah Hujan {start.strftime('%d %b %Y')}*\n*Data 2 Jam Terakhir*\n"
-        final += f"Akumulasi : ({start.strftime('%H:%M')}) - ({end.strftime('%H:%M')})\n"
+        final = f"*Curah Hujan {info['start'].strftime('%d %b %Y')}*\n"
+        final += f"({info['start'].strftime('%H:%M')}) - ({info['end'].strftime('%H:%M')})\n"
         message = ""
         i = 0
         for name, count in info['logger'].items():
@@ -146,9 +153,6 @@ def ch_report(time, bot):
 
 
 def tma_report(time, bot):
-    start = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour - 2}:00:00", "%Y-%m-%d %H:%M:%S")
-    end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour}:00:00", "%Y-%m-%d %H:%M:%S")
-
     periodik_result = {}
     loggers = Logger.query.filter(Logger.tipe == 'awlr').order_by(Logger.id).all()
 
@@ -164,14 +168,13 @@ def tma_report(time, bot):
         latest = Periodik.query.filter(Periodik.logger_sn == log.sn).order_by(desc(Periodik.sampling)).first()
         if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger']:
             if latest:
-                sample = latest.sampling.strftime('%H:%M, %d %b %Y')
+                sample = latest.sampling.strftime('%H:%M %d %b %Y')
                 periodik_result[log.tenant.nama]['logger'][location_name] = f"{latest.wlev or '-'}m, pada {sample}"
             else:
                 periodik_result[log.tenant.nama]['logger'][location_name] = "Belum Ada Data"
 
     for ten, info in periodik_result.items():
-        final = f"*TMA*\n*Data 2 Jam Terakhir*\n{start.strftime('%d %b %Y')}"
-        final += f", ({start.strftime('%H:%M')}) - ({end.strftime('%H:%M')})"
+        final = f"*TMA*\n"
         message = ""
         i = 0
         for name, count in info['logger'].items():
@@ -190,36 +193,42 @@ def tma_report(time, bot):
 
 def periodik_count_report(time):
     ''' Message Tenants about last day periodic counts '''
-    start = datetime.datetime.strptime(f"{time.year}-{time.month}-{time.day - 1} 00:00:00", "%Y-%m-%d %H:%M:%S")
-    end = datetime.datetime.strptime(f"{time.year}-{time.month}-{time.day} 00:00:00", "%Y-%m-%d %H:%M:%S")
-
     bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
 
     periodik_result = {}
-    loggers = Logger.query.order_by(Logger.id).all()
-    periodics = Periodik.query.filter(Periodik.sampling.between(start, end))
+    tenants = Tenant.query.order_by(Tenant.id).all()
 
-    for log in loggers:
-        location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
-        pos_tipe = POS_NAME[log.location.tipe] if log.location and log.location.tipe else "Lain"
-        if log.tenant and log.tenant.nama not in periodik_result:
-            periodik_result[log.tenant.nama] = {
-                'logger': {
-                    'Klimatologi': {},
-                    'Hujan': {},
-                    'TMA': {},
-                    'Lain': {}
-                },
-                'telegram_group': log.tenant.telegram_info_group,
-                'telegram_id': log.tenant.telegram_info_id
-            }
-        if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger'][pos_tipe]:
-            periodik_result[log.tenant.nama]['logger'][pos_tipe][location_name] = 0
+    for ten in tenants:
+        # param tz should be entered if tenant have timezone
+        # log.tenant.timezone
+        tz = ten.timezone or "Asia/Jakarta"
+        localtime = utc2local(time, tz=tz)
+        end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 23:56:00", "%Y-%m-%d %H:%M:%S")
+        start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 00:00:00", "%Y-%m-%d %H:%M:%S")
 
-    for period in periodics:
-        location_name = period.location.nama if period.location else f"Lokasi {period.logger_sn}"
-        pos_tipe = POS_NAME[period.location.tipe] if period.location and period.location.tipe else "Lain"
-        periodik_result[period.periodik_tenant.nama]['logger'][pos_tipe][location_name] += 1
+        periodik_result[ten.nama] = {
+            'logger': {
+                'Klimatologi': {},
+                'Hujan': {},
+                'TMA': {},
+                'Lain': {}
+            },
+            'telegram_group': ten.telegram_info_group,
+            'telegram_id': ten.telegram_info_id
+        }
+
+        periodics = Periodik.query.filter(
+                                    Periodik.sampling.between(local2utc(start), local2utc(end)),
+                                    Periodik.tenant_id == ten.id).all()
+
+        for period in periodics:
+            location_name = period.logger.location.nama if period.logger.location else f"Lokasi {period.logger.sn}"
+            pos_tipe = POS_NAME[period.logger.location.tipe] if period.logger.location and period.logger.location.tipe else "Lain"
+
+            if location_name in periodik_result[ten.nama]['logger'][pos_tipe]:
+                periodik_result[ten.nama]['logger'][pos_tipe][location_name] += 1
+            else:
+                periodik_result[ten.nama]['logger'][pos_tipe][location_name] = 1
 
     for ten, info in periodik_result.items():
         final = '''*%(ten)s*\n*Kehadiran Data*\n%(tgl)s (0:0 - 23:55)

@@ -44,6 +44,7 @@ class Tenant(db.Model):
     telegram_alert_group = db.Column(db.Text)
     telegram_info_id = db.Column(db.Integer)
     telegram_info_group = db.Column(db.Text)
+    timezone = db.Column(db.String(50))
 
     locations = relationship('Location', backref='location_tenant')
     loggers = relationship('Logger', backref='logger_tenant')
