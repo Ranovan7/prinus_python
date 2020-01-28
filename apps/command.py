@@ -120,18 +120,20 @@ def ch_report(time, bot):
             'telegram_id': ten.telegram_info_id
         }
 
+        loggers = Logger.query.filter(
+                                    Logger.tipe == 'arr',
+                                    Logger.tenant_id == ten.id).all()
+        for log in loggers:
+            location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
+            periodik_result[ten.nama]['logger'][location_name] = 0
+
         periodics = Periodik.query.filter(
                                     Periodik.sampling.between(local2utc(start), local2utc(end)),
                                     Periodik.rain > 0,
                                     Periodik.tenant_id == ten.id).all()
 
         for period in periodics:
-            location_name = period.logger.location.nama if period.logger.location else f"Lokasi {period.logger.sn}"
-
-            if location_name in periodik_result[period.periodik_tenant.nama]['logger']:
-                periodik_result[period.periodik_tenant.nama]['logger'][location_name] += period.rain
-            else:
-                periodik_result[period.periodik_tenant.nama]['logger'][location_name] = period.rain
+            periodik_result[period.periodik_tenant.nama]['logger'][location_name] += period.rain
 
     for ten, info in periodik_result.items():
         final = f"*Curah Hujan {info['start'].strftime('%d %b %Y')}*\n"
@@ -217,6 +219,13 @@ def periodik_count_report(time):
             'telegram_id': ten.telegram_info_id
         }
 
+        loggers = Logger.query.filter(Logger.tenant_id == ten.id).all()
+        for log in loggers:
+            location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
+            pos_tipe = POS_NAME[log.location.tipe] if log.location and log.location.tipe else "Lain"
+
+            periodik_result[ten.nama]['logger'][pos_tipe][location_name] = 0
+
         periodics = Periodik.query.filter(
                                     Periodik.sampling.between(local2utc(start), local2utc(end)),
                                     Periodik.tenant_id == ten.id).all()
@@ -225,10 +234,7 @@ def periodik_count_report(time):
             location_name = period.logger.location.nama if period.logger.location else f"Lokasi {period.logger.sn}"
             pos_tipe = POS_NAME[period.logger.location.tipe] if period.logger.location and period.logger.location.tipe else "Lain"
 
-            if location_name in periodik_result[ten.nama]['logger'][pos_tipe]:
-                periodik_result[ten.nama]['logger'][pos_tipe][location_name] += 1
-            else:
-                periodik_result[ten.nama]['logger'][pos_tipe][location_name] = 1
+            periodik_result[ten.nama]['logger'][pos_tipe][location_name] = 1
 
     for ten, info in periodik_result.items():
         final = '''*%(ten)s*\n*Kehadiran Data*\n%(tgl)s (0:0 - 23:55)
