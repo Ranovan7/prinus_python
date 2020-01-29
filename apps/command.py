@@ -67,9 +67,9 @@ def prettydate(d):
     elif diff.days >= 1 and diff.days < 7:
         return f"{diff.days} Hari Lalu"
     elif s < 3600:
-        return f"{s/60} Menit Lalu"
+        return f"{round(s/60, 0)} Menit Lalu"
     else:
-        return f"{s/3600} Jam Lalu"
+        return f"{round(s/3600, 0)} Jam Lalu"
 
 
 @app.cli.command()
@@ -164,7 +164,7 @@ def tma_report(time, bot):
 
             i += 1
             if latest['periodik']:
-                info = f"{latest['periodik'].wlev}, {latest['latest']}"
+                info = f"{latest['periodik'].wlev or '-'}, {latest['latest']}"
                 tgl = f"\n     ({latest['periodik'].sampling.strftime('%d %b %Y, %H:%M')})\n"
             else:
                 info = "Belum Ada Data"
