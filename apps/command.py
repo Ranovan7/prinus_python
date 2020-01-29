@@ -14,7 +14,7 @@ from pytz import timezone
 from telegram import Bot
 
 from apps import app, db
-from apps.models import Logger, Raw, Tenant, Periodik
+from apps.models import Logger, Location, Raw, Tenant, Periodik
 
 bws_sul2 = ("bwssul2", "limboto1029")
 
@@ -27,7 +27,7 @@ HUJAN_LEBAT = 10
 HUJAN_SANGAT_LEBAT = 20
 POS_NAME = {
     '1': "Hujan",
-    '2': "TMA",
+    '2': "Duga Air",
     '4': "Klimatologi"
 }
 
@@ -57,6 +57,21 @@ def getstarttime(time):
     return res
 
 
+def prettydate(d):
+    diff = datetime.datetime.utcnow() - d
+    s = diff.seconds
+    if diff.days > 30:
+        return f"Lebih dari Sebulan Lalu"
+    elif diff.days > 7 and diff.days < 30:
+        return f"Lebih dari Seminggu Lalu"
+    elif diff.days >= 1 and diff.days < 7:
+        return f"{diff.days} Hari Lalu"
+    elif s < 3600:
+        return f"{s/60} Menit Lalu"
+    else:
+        return f"{s/3600} Jam Lalu"
+
+
 @app.cli.command()
 @click.argument('command')
 def telegram(command):
@@ -64,23 +79,6 @@ def telegram(command):
     # time = datetime.datetime.strptime("2020-01-09 11:00:00", "%Y-%m-%d %H:%M:%S")
     if command == 'test':
         print(persentase_hadir_data(tgl))
-    elif command == 'info_ch':
-        info = info_ch()
-        bot = Bot(token=app.config.get('BWSSUL2BOT_TOKEN'))
-        bot.sendMessage(app.config.get('BWS_SUL2_TELEMETRY_GROUP'),
-                        text=info,
-                        parse_mode='Markdown')
-    elif command == 'info_tma':
-        info = info_tma()
-        bot = Bot(token=app.config.get('BWSSUL2BOT_TOKEN'))
-        bot.sendMessage(app.config.get('BWS_SUL2_TELEMETRY_GROUP'),
-                        text=(info),
-                        parse_mode='Markdown')
-    elif command == 'send':
-        bot = Bot(token=app.config.get('BWSSUL2BOT_TOKEN'))
-        bot.sendMessage(app.config.get('BWS_SUL2_TELEMETRY_GROUP'),
-                        text=(persentase_hadir_data(tgl)),
-                        parse_mode='Markdown')
     elif command == 'periodik':
         print("Sending Periodik Info")
         periodik_report(time)
@@ -90,6 +88,15 @@ def telegram(command):
     elif command == 'warning':
         print("Sending Alert Message")
         rain_alert(time)
+
+
+def send_telegram(bot, id, message, debug_text):
+    debug_text = f"Sending Telegram to {id}"
+    try:
+        bot.sendMessage(id, text=message)
+        logging.debug(f"{debug_text}")
+    except Exception as e:
+        logging.debug(f"{debug_text} Error : {e}")
 
 
 def periodik_report(time):
@@ -103,7 +110,6 @@ def periodik_report(time):
 
 
 def ch_report(time, bot):
-    periodik_result = {}
     tenants = Tenant.query.order_by(Tenant.id).all()
 
     for ten in tenants:
@@ -112,92 +118,112 @@ def ch_report(time, bot):
         end = datetime.datetime.strptime(f"{localtime.strftime('%Y-%m-%d')} {localtime.hour}:00:00", "%Y-%m-%d %H:%M:%S")
         start = getstarttime(end)
 
-        periodik_result[ten.nama] = {
-            'logger': {},
-            'start': start,
-            'end': end,
-            'telegram_group': ten.telegram_info_group,
-            'telegram_id': ten.telegram_info_id
-        }
-
-        loggers = Logger.query.filter(
-                                    Logger.tipe == 'arr',
-                                    Logger.tenant_id == ten.id).all()
-        for log in loggers:
-            location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
-            periodik_result[ten.nama]['logger'][location_name] = 0
-
-        periodics = Periodik.query.filter(
-                                    Periodik.sampling.between(local2utc(start), local2utc(end)),
-                                    Periodik.rain > 0,
-                                    Periodik.tenant_id == ten.id).all()
-
-        for period in periodics:
-            periodik_result[period.periodik_tenant.nama]['logger'][location_name] += period.rain
-
-    for ten, info in periodik_result.items():
-        final = f"*Curah Hujan {info['start'].strftime('%d %b %Y')}*\n"
-        final += f"({info['start'].strftime('%H:%M')}) - ({info['end'].strftime('%H:%M')})\n"
+        final = f"*Curah Hujan {end.strftime('%d %b %Y')}*\n"
+        final += f"{start.strftime('%H:%M')} - {end.strftime('%H:%M')}\n"
         message = ""
+
+        locations = Location.query.filter(
+                                    # Location.tipe == '1',
+                                    Location.tenant_id == ten.id).all()
+
         i = 0
-        for name, count in info['logger'].items():
+        for pos in locations:
+            result = get_ch_pos(pos, start, end)
+            latest = get_latest_telemetri(pos)
+
             i += 1
-            message += f"\n{i}. {name} : {round(count, 2)} mm"
+            rain = f"{round(result['rain'], 2)} mm selama {result['duration']} menit" if result['rain'] > 0 else '-'
+            message += f"\n{i}. {pos.nama} : {rain}"
+            message += f"\n     {result['percent']}%, data terakhir {latest['latest']}\n"
+
         if message:
             final += message
-        try:
-            bot.sendMessage(info['telegram_id'], text=final)
-            logging.debug(f"TeleRep-send to {ten}")
-        except Exception as e:
-            logging.debug(f"TeleRep-send Error ({ten}) : {e}")
+        else:
+            final += "\nBelum Ada Lokasi yg tercatat"
+
+        send_telegram(bot, ten.telegram_info_id, final, f"TeleRep-send {ten.nama}")
+
+        print(f"{ten.nama}")
         print(final)
         print()
 
 
 def tma_report(time, bot):
-    periodik_result = {}
-    loggers = Logger.query.filter(Logger.tipe == 'awlr').order_by(Logger.id).all()
+    tenants = Tenant.query.order_by(Tenant.id).all()
 
-    for log in loggers:
-        location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
-        if log.tenant and log.tenant.nama not in periodik_result:
-            periodik_result[log.tenant.nama] = {
-                'logger': {},
-                'telegram_group': log.tenant.telegram_info_group,
-                'telegram_id': log.tenant.telegram_info_id
-            }
+    for ten in tenants:
+        locations = Location.query.filter(
+                                    # Location.tipe == '1',
+                                    Location.tenant_id == ten.id).all()
 
-        latest = Periodik.query.filter(Periodik.logger_sn == log.sn).order_by(desc(Periodik.sampling)).first()
-        if log.tenant and location_name not in periodik_result[log.tenant.nama]['logger']:
-            if latest:
-                sample = latest.sampling.strftime('%H:%M %d %b %Y')
-                periodik_result[log.tenant.nama]['logger'][location_name] = f"{latest.wlev or '-'}m, pada {sample}"
-            else:
-                periodik_result[log.tenant.nama]['logger'][location_name] = "Belum Ada Data"
-
-    for ten, info in periodik_result.items():
         final = f"*TMA*\n"
         message = ""
         i = 0
-        for name, count in info['logger'].items():
+        for pos in locations:
+            latest = get_latest_telemetri(pos)
+
             i += 1
-            message += f"\n{i}. {name} : {count}"
+            if latest['periodik']:
+                info = f"{latest['periodik'].wlev}, {latest['latest']}"
+                tgl = f"\n     ({latest['periodik'].sampling.strftime('%d %b %Y, %H:%M')})\n"
+            else:
+                info = "Belum Ada Data"
+                tgl = "\n"
+            message += f"\n{i}. {pos.nama} : {info}"
+            message += tgl
+
         if message:
             final += message
-        try:
-            bot.sendMessage(info['telegram_id'], text=final)
-            logging.debug(f"TeleRep-send to {ten}")
-        except Exception as e:
-            logging.debug(f"TeleRep-send Error ({ten}) : {e}")
+        else:
+            final += "\nBelum Ada Lokasi yg tercatat"
+
+        send_telegram(bot, ten.telegram_info_id, final, f"TeleRep-send {ten.nama}")
+
         print(final)
         print()
+
+
+def get_ch_pos(pos, start, end):
+    periodics = Periodik.query.filter(
+                                Periodik.sampling.between(local2utc(start), local2utc(end)),
+                                Periodik.rain > 0,
+                                Periodik.location_id == pos.id).all()
+    result = {
+        'pos': pos,
+        'rain': 0,
+        'duration': 0,
+        'percent': 0
+    }
+    for period in periodics:
+        result['rain'] += period.rain
+        result['duration'] += 5
+        result['percent'] += 1
+
+    diff = end - start
+    percent = (result['percent']/(diff.seconds/300)) * 100
+    result['percent'] = round(percent, 2)
+
+    return result
+
+
+def get_latest_telemetri(pos):
+    latest = Periodik.query.filter(Periodik.location_id == pos.id).order_by(desc(Periodik.sampling)).first()
+
+    result = {
+        'periodik': latest,
+        'lastest': ""
+    }
+    if latest:
+        result['latest'] = prettydate(latest.sampling)
+    else:
+        result['latest'] = "Belum Ada Data"
+    return result
 
 
 def periodik_count_report(time):
     ''' Message Tenants about last day periodic counts '''
     bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
 
-    periodik_result = {}
     tenants = Tenant.query.order_by(Tenant.id).all()
 
     for ten in tenants:
@@ -208,57 +234,49 @@ def periodik_count_report(time):
         end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 23:56:00", "%Y-%m-%d %H:%M:%S")
         start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 00:00:00", "%Y-%m-%d %H:%M:%S")
 
-        periodik_result[ten.nama] = {
-            'logger': {
-                'Klimatologi': {},
-                'Hujan': {},
-                'TMA': {},
-                'Lain': {}
-            },
-            'telegram_group': ten.telegram_info_group,
-            'telegram_id': ten.telegram_info_id
-        }
-
-        loggers = Logger.query.filter(Logger.tenant_id == ten.id).all()
-        for log in loggers:
-            location_name = log.location.nama if log.location else f"Lokasi {log.sn}"
-            pos_tipe = POS_NAME[log.location.tipe] if log.location and log.location.tipe else "Lain"
-
-            periodik_result[ten.nama]['logger'][pos_tipe][location_name] = 0
-
-        periodics = Periodik.query.filter(
-                                    Periodik.sampling.between(local2utc(start), local2utc(end)),
-                                    Periodik.tenant_id == ten.id).all()
-
-        for period in periodics:
-            location_name = period.logger.location.nama if period.logger.location else f"Lokasi {period.logger.sn}"
-            pos_tipe = POS_NAME[period.logger.location.tipe] if period.logger.location and period.logger.location.tipe else "Lain"
-
-            periodik_result[ten.nama]['logger'][pos_tipe][location_name] = 1
-
-    for ten, info in periodik_result.items():
         final = '''*%(ten)s*\n*Kehadiran Data*\n%(tgl)s (0:0 - 23:55)
-        ''' % {'ten': ten, 'tgl': start.strftime('%d %b %Y')}
-        for tipe, pos in info['logger'].items():
-            message = ""
-            i = 0
-            all = 0
-            for name, count in pos.items():
-                percent = round((count/288) * 100, 2)
-                message += f"\n- {name} : {percent}%\n"
-                i += 1
-                all += percent
-            avg = round(all/i, 2) if i else 0
-            if message:
-                final += f"\n# Pos {tipe} ({avg}%) \n"
-                final += message
-        try:
-            logging.debug(f"TeleCount-send to {ten}")
-            bot.sendMessage(info['telegram_id'], text=final)
-        except Exception as e:
-            logging.debug(f"TeleCount-send Error ({ten}) : {e}")
+        ''' % {'ten': ten.nama, 'tgl': start.strftime('%d %b %Y')}
+        message = ""
+
+        locations = Location.query.filter(
+                                    # Location.tipe == '1',
+                                    Location.tenant_id == ten.id).all()
+
+        i = 0
+        for pos in locations:
+            i += 1
+            result = get_periodic_arrival(pos, start, end)
+            message += f"\n{i} {pos.nama} ({result['tipe']}) : {result['percent']}%"
+
+        if message:
+            final += message
+        else:
+            final += "\nBelum Ada Lokasi yg tercatat"
+
+        send_telegram(bot, ten.telegram_info_id, final, f"TeleCount-send {ten.nama}")
         print(final)
+        print()
     bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Daily Count Reports to All Tenants")
+
+
+def get_periodic_arrival(pos, start, end):
+    periodics = Periodik.query.filter(
+                                Periodik.sampling.between(local2utc(start), local2utc(end)),
+                                Periodik.location_id == pos.id).all()
+    tipe = POS_NAME[pos.tipe] if pos.tipe else "Lain-lain"
+    result = {
+        'pos': pos,
+        'tipe': tipe,
+        'percent': 0
+    }
+    for period in periodics:
+        result['percent'] += 1
+
+    diff = end - start
+    percent = (result['percent']/(diff.seconds/300)) * 100
+    result['percent'] = round(percent, 2)
+
+    return result
 
 
 def rain_alert(time):
