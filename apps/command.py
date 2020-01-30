@@ -67,9 +67,9 @@ def prettydate(d):
     elif diff.days >= 1 and diff.days < 7:
         return f"{diff.days} Hari Lalu"
     elif s < 3600:
-        return f"{round(s/60, 0)} Menit Lalu"
+        return f"{round(s/60)} Menit Lalu"
     else:
-        return f"{round(s/3600, 0)} Jam Lalu"
+        return f"{round(s/3600)} Jam Lalu"
 
 
 @app.cli.command()
