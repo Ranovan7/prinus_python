@@ -75,10 +75,10 @@ def prettydate(d):
 @app.cli.command()
 @click.argument('command')
 def telegram(command):
-    time = datetime.datetime.now()
-    # time = datetime.datetime.strptime("2020-01-09 11:00:00", "%Y-%m-%d %H:%M:%S")
+    # time = datetime.datetime.now()
+    time = datetime.datetime.strptime("2020-01-09 11:00:00", "%Y-%m-%d %H:%M:%S")
     if command == 'test':
-        print(persentase_hadir_data(tgl))
+        print(send_telegram())
     elif command == 'periodik':
         print("Sending Periodik Info")
         periodik_report(time)
@@ -123,12 +123,12 @@ def ch_report(time, bot):
         message = ""
 
         locations = Location.query.filter(
-                                    # Location.tipe == '1',
+                                    or_(Location.tipe == '1', Location.tipe == '4'),
                                     Location.tenant_id == ten.id).all()
 
         i = 0
         for pos in locations:
-            result = get_ch_pos(pos, start, end)
+            result = get_periodik_sum(pos, start, end)
             latest = get_latest_telemetri(pos)
 
             i += 1
@@ -153,7 +153,7 @@ def tma_report(time, bot):
 
     for ten in tenants:
         locations = Location.query.filter(
-                                    # Location.tipe == '1',
+                                    Location.tipe == '2',
                                     Location.tenant_id == ten.id).all()
 
         final = f"*TMA*\n"
@@ -183,10 +183,9 @@ def tma_report(time, bot):
         print()
 
 
-def get_ch_pos(pos, start, end):
+def get_periodik_sum(pos, start, end):
     periodics = Periodik.query.filter(
                                 Periodik.sampling.between(local2utc(start), local2utc(end)),
-                                Periodik.rain > 0,
                                 Periodik.location_id == pos.id).all()
     result = {
         'pos': pos,
@@ -320,121 +319,6 @@ def rain_alert(time):
                 logging.debug(f"TeleWarn-send Error ({ten}) : {e}")
         print(header)
     # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Alert to All Tenants")
-
-
-def info_ch():
-    ret = "*BWS Sulawesi 2*\n\n"
-    ch = build_ch()
-    ret += ch
-    return ret
-
-
-def info_tma():
-    ret = "*BWS Sulawesi 2*\n\n"
-    tma = build_tma()
-    ret += tma
-    return ret
-
-
-def build_ch():
-    now = datetime.datetime.now()
-    dari = now.replace(hour=7, minute=0, second=0, microsecond=0)
-    if now.hour < 7:
-        dari -= datetime.timedelta(days=1)
-    ret = "*Curah Hujan %s*\n" % (dari.strftime('%d %b %Y'))
-    dari_fmt = dari.date() != now.date() and '%d %b %Y %H:%M' or '%H:%M'
-    ret += "Akumulasi: %s sd %s (%.1f jam)\n\n" % (dari.strftime(dari_fmt),
-                                                 now.strftime('%H:%M'),
-                                                 (now - dari).seconds / 3600)
-    i = 1
-    for pos in Lokasi.query.filter(or_(Lokasi.jenis == '1', Lokasi.jenis ==
-                                      '4')):
-        ret += "%s. %s" % (i, pos.nama)
-        j = 1
-        durasi = 0
-        ch = 0
-        for p in Periodik.query.filter(Periodik.lokasi_id == pos.id,
-                                       Periodik.rain > 0,
-                                       Periodik.sampling > dari):
-            durasi += 5
-            ch += p.rain
-        if ch > 0:
-            ret += " *%.1f mm (%s menit)*" % (ch, durasi)
-        else:
-            ret += " _tidak hujan_"
-        ret += "\n"
-        i += 1
-    return ret
-
-
-def build_tma():
-    ret = '\n*Tinggi Muka Air*\n\n'
-    i = 1
-    now = datetime.datetime.now()
-    for pos in Lokasi.query.filter(Lokasi.jenis == '2'):
-        ret += "%s. %s" % (i, pos.nama)
-        periodik = Periodik.query.filter(Periodik.lokasi_id ==
-                              pos.id, Periodik.sampling <= now).order_by(desc(Periodik.sampling)).first()
-        ret +=  " *TMA: %.2f Meter* jam %s\n" % (periodik.wlev * 0.01,
-                                  periodik.sampling.strftime('%H:%M %d %b %Y'))
-        i += 1
-    return ret
-
-
-def persentase_hadir_data(tgl):
-    out = '''*BWS Sulawesi 2*
-*Kehadiran Data*
-%(tgl)s (0:0 - 23:55)
-''' % {'tgl': tgl.strftime('%d %b %Y')}
-    pos_list = Lokasi.query.filter(Lokasi.jenis == '1')
-    if pos_list.count():
-        str_pos = ''
-        j_data = 0
-        i = 1
-        for l in pos_list:
-            banyak_data = Periodik.query.filter(Periodik.lokasi_id == l.id,
-                                                func.DATE(Periodik.sampling) == tgl).count()
-            persen_data = (banyak_data/288) * 100
-            j_data += persen_data
-            str_pos += '%s. %s ' % (i, l.nama + ': *%.1f%%*\n' % (persen_data))
-            i += 1
-        str_pos = '\n*Pos Hujan: %.1f%%*\n\n' % (j_data/(i-1)) + str_pos
-        out += str_pos
-    # end pos_hujan
-
-    pos_list = Lokasi.query.filter(Lokasi.jenis == '2')
-    if pos_list.count():
-        str_pos = ''
-        i = 1
-        j_data = 0
-        persen_data = 0
-        for l in pos_list:
-            banyak_data = Periodik.query.filter(Periodik.lokasi_id == l.id,
-                                                func.DATE(Periodik.sampling) == tgl).count()
-            persen_data = (banyak_data/288) * 100
-            j_data += persen_data
-            str_pos += '%s. %s ' % (i, l.nama + ': *%.1f%%*\n' % (persen_data))
-            i += 1
-        str_pos = '\n*Pos TMA: %.1f%%*\n\n' % (j_data/(i-1)) + str_pos
-        out += str_pos
-    # end pos_tma_list
-
-    pos_list = Lokasi.query.filter(Lokasi.jenis == '4')
-    if pos_list.count():
-        str_pos = ''
-        i = 1
-        j_data = 0
-        persen_data = 0
-        for l in pos_list:
-            banyak_data = Periodik.query.filter(Periodik.lokasi_id == l.id,
-                                                func.DATE(Periodik.sampling) == tgl).count()
-            persen_data = (banyak_data/288) * 100
-            j_data += persen_data
-            str_pos += '%s. %s ' % (i, l.nama + ': *%.1f%%*\n' % (persen_data))
-            i += 1
-            str_pos = '\n*Pos Klimatologi: %.1f%%*\n\n' % (j_data/(i-1)) + str_pos
-        out += str_pos
-    return out
 
 
 @app.cli.command()
