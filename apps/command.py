@@ -50,11 +50,8 @@ def local2utc(time):
 
 def getstarttime(time):
     ''' get starting time of the data '''
-    if time.hour < 7:
-        res = datetime.datetime.strptime(f"{time.year}-{time.month}-{time.day - 1} 07:00:00", "%Y-%m-%d %H:%M:%S")
-    else:
-        res = datetime.datetime.strptime(f"{time.year}-{time.month}-{time.day} 07:00:00", "%Y-%m-%d %H:%M:%S")
-    return res
+    res = time.hour < 7 and (time - datetime.timedelta(days=1)) or time
+    return res.replace(hour=7, minute=0, second=0)
 
 
 def prettydate(d):
