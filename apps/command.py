@@ -72,8 +72,8 @@ def prettydate(d):
 @app.cli.command()
 @click.argument('command')
 def telegram(command):
-    # time = datetime.datetime.now()
-    time = datetime.datetime.strptime("2020-01-09 08:05:00 UTC", "%Y-%m-%d %H:%M:%S %Z")
+    time = datetime.datetime.now()
+    # time = datetime.datetime.strptime("2020-01-09 08:05:00 UTC", "%Y-%m-%d %H:%M:%S %Z")
     if command == 'test':
         print(send_telegram())
     elif command == 'periodik':
