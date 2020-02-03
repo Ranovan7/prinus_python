@@ -37,13 +37,13 @@ logging.basicConfig(
 
 
 def utc2local(time, tz="Asia/Jakarta"):
-    ''' return with year-month-day hours:minutes:seconds in local(tz) timezone '''
+    ''' return with datetime in local(tz) timezone, default=Asia/Jakarta '''
     time = time.astimezone(timezone(tz))
     return time
 
 
 def local2utc(time):
-    ''' return with year-month-day hours:minutes:seconds in local(tz) timezone '''
+    ''' return with datetime in utc timezone '''
     time = time.astimezone(timezone('UTC'))
     return time
 
@@ -73,7 +73,7 @@ def prettydate(d):
 @click.argument('command')
 def telegram(command):
     time = datetime.datetime.now()
-    # time = datetime.datetime.strptime("2020-01-09 11:00:00", "%Y-%m-%d %H:%M:%S")
+    # time = datetime.datetime.strptime("2020-01-09 17:05:00 UTC", "%Y-%m-%d %H:%M:%S %Z")
     if command == 'test':
         print(send_telegram())
     elif command == 'periodik':
@@ -225,10 +225,10 @@ def periodik_count_report(time):
     for ten in tenants:
         # param tz should be entered if tenant have timezone
         # log.tenant.timezone
-        tz = ten.timezone or "Asia/Jakarta"
+        tz = ten.timezone or "Asia/Jakarta"  # "Asia/Jakarta"
         localtime = utc2local(time, tz=tz)
-        end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 23:56:00", "%Y-%m-%d %H:%M:%S")
-        start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 00:00:00", "%Y-%m-%d %H:%M:%S")
+        end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day} 23:56:00", "%Y-%m-%d %H:%M:%S")
+        start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day} 00:00:00", "%Y-%m-%d %H:%M:%S")
 
         final = '''*%(ten)s*\n*Kehadiran Data*\n%(tgl)s (0:0 - 23:55)
         ''' % {'ten': ten.nama, 'tgl': start.strftime('%d %b %Y')}
@@ -250,9 +250,9 @@ def periodik_count_report(time):
             final += "\nBelum Ada Lokasi yg tercatat"
 
         send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleCount-send {ten.nama}")
-        print(final)
+        print(f"{localtime} : {final}")
         print()
-    bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Daily Count Reports to All Tenants")
+    # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Daily Count Reports to All Tenants")
 
 
 def get_periodic_arrival(pos, start, end):
