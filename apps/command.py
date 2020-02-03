@@ -72,8 +72,8 @@ def prettydate(d):
 @app.cli.command()
 @click.argument('command')
 def telegram(command):
-    time = datetime.datetime.now()
-    # time = datetime.datetime.strptime("2020-01-09 17:05:00 UTC", "%Y-%m-%d %H:%M:%S %Z")
+    # time = datetime.datetime.now()
+    time = datetime.datetime.strptime("2020-01-09 08:05:00 UTC", "%Y-%m-%d %H:%M:%S %Z")
     if command == 'test':
         print(send_telegram())
     elif command == 'periodik':
@@ -100,84 +100,85 @@ def periodik_report(time):
     ''' Message Tenants about last 2 hour rain and water level '''
     bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
 
-    ch_report(time, bot)
-    tma_report(time, bot)
-
-    # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending 2-Hourly Reports to All Tenants")
-
-
-def ch_report(time, bot):
     tenants = Tenant.query.order_by(Tenant.id).all()
 
     for ten in tenants:
         tz = ten.timezone or "Asia/Jakarta"
         localtime = utc2local(time, tz=tz)
-        end = datetime.datetime.strptime(f"{localtime.strftime('%Y-%m-%d')} {localtime.hour}:00:00", "%Y-%m-%d %H:%M:%S")
-        start = getstarttime(end)
+        if localtime.hour % 2 != 0:
+            continue
+        ch_report(ten, time, bot)
+        tma_report(ten, time, bot)
 
-        final = f"*Curah Hujan {end.strftime('%d %b %Y')}*\n"
-        final += f"{start.strftime('%H:%M')} - {end.strftime('%H:%M')}\n"
-        message = ""
+    # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending 2-Hourly Reports to All Tenants")
 
-        locations = Location.query.filter(
-                                    or_(Location.tipe == '1', Location.tipe == '4'),
-                                    Location.tenant_id == ten.id).all()
 
-        i = 0
-        for pos in locations:
-            result = get_periodik_sum(pos, start, end)
-            latest = get_latest_telemetri(pos)
+def ch_report(ten, time, bot):
+    tz = ten.timezone or "Asia/Jakarta"
+    localtime = utc2local(time, tz=tz)
+    end = datetime.datetime.strptime(f"{localtime.strftime('%Y-%m-%d')} {localtime.hour}:00:00", "%Y-%m-%d %H:%M:%S")
+    start = getstarttime(end)
 
-            i += 1
-            rain = f"{round(result['rain'], 2)} mm selama {result['duration']} menit" if result['rain'] > 0 else '-'
-            message += f"\n{i}. {pos.nama} : {rain}"
-            message += f"\n     {result['percent']}%, data terakhir {latest['latest']}\n"
+    final = f"*Curah Hujan {end.strftime('%d %b %Y')}*\n"
+    final += f"{start.strftime('%H:%M')} - {end.strftime('%H:%M')}\n"
+    message = ""
 
-        if message:
-            final += message
+    locations = Location.query.filter(
+                                or_(Location.tipe == '1', Location.tipe == '4'),
+                                Location.tenant_id == ten.id).all()
+
+    i = 0
+    for pos in locations:
+        result = get_periodik_sum(pos, start, end)
+        latest = get_latest_telemetri(pos)
+
+        i += 1
+        rain = f"{round(result['rain'], 2)} mm selama {result['duration']} menit" if result['rain'] > 0 else '-'
+        message += f"\n{i}. {pos.nama} : {rain}"
+        message += f"\n     {result['percent']}%, data terakhir {latest['latest']}\n"
+
+    if message:
+        final += message
+    else:
+        final += "\nBelum Ada Lokasi yg tercatat"
+
+    send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleRep-send {ten.nama}")
+
+    print(f"{ten.nama}")
+    print(final)
+    print()
+
+
+def tma_report(ten, time, bot):
+    locations = Location.query.filter(
+                                Location.tipe == '2',
+                                Location.tenant_id == ten.id).all()
+
+    final = f"*TMA*\n"
+    message = ""
+    i = 0
+    for pos in locations:
+        latest = get_latest_telemetri(pos)
+
+        i += 1
+        if latest['periodik']:
+            info = f"{latest['periodik'].wlev or '-'}, {latest['latest']}"
+            tgl = f"\n     ({latest['periodik'].sampling.strftime('%d %b %Y, %H:%M')})\n"
         else:
-            final += "\nBelum Ada Lokasi yg tercatat"
+            info = "Belum Ada Data"
+            tgl = "\n"
+        message += f"\n{i}. {pos.nama} : {info}"
+        message += tgl
 
-        send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleRep-send {ten.nama}")
+    if message:
+        final += message
+    else:
+        final += "\nBelum Ada Lokasi yg tercatat"
 
-        print(f"{ten.nama}")
-        print(final)
-        print()
+    send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleRep-send {ten.nama}")
 
-
-def tma_report(time, bot):
-    tenants = Tenant.query.order_by(Tenant.id).all()
-
-    for ten in tenants:
-        locations = Location.query.filter(
-                                    Location.tipe == '2',
-                                    Location.tenant_id == ten.id).all()
-
-        final = f"*TMA*\n"
-        message = ""
-        i = 0
-        for pos in locations:
-            latest = get_latest_telemetri(pos)
-
-            i += 1
-            if latest['periodik']:
-                info = f"{latest['periodik'].wlev or '-'}, {latest['latest']}"
-                tgl = f"\n     ({latest['periodik'].sampling.strftime('%d %b %Y, %H:%M')})\n"
-            else:
-                info = "Belum Ada Data"
-                tgl = "\n"
-            message += f"\n{i}. {pos.nama} : {info}"
-            message += tgl
-
-        if message:
-            final += message
-        else:
-            final += "\nBelum Ada Lokasi yg tercatat"
-
-        send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleRep-send {ten.nama}")
-
-        print(final)
-        print()
+    print(final)
+    print()
 
 
 def get_periodik_sum(pos, start, end):
@@ -227,8 +228,10 @@ def periodik_count_report(time):
         # log.tenant.timezone
         tz = ten.timezone or "Asia/Jakarta"  # "Asia/Jakarta"
         localtime = utc2local(time, tz=tz)
-        end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day} 23:56:00", "%Y-%m-%d %H:%M:%S")
-        start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day} 00:00:00", "%Y-%m-%d %H:%M:%S")
+        if localtime.hour != 7:
+            continue
+        end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 23:56:00", "%Y-%m-%d %H:%M:%S")
+        start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 00:00:00", "%Y-%m-%d %H:%M:%S")
 
         final = '''*%(ten)s*\n*Kehadiran Data*\n%(tgl)s (0:0 - 23:55)
         ''' % {'ten': ten.nama, 'tgl': start.strftime('%d %b %Y')}
