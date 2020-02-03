@@ -87,8 +87,8 @@ def telegram(command):
         rain_alert(time)
 
 
-def send_telegram(bot, id, message, debug_text):
-    debug_text = f"Sending Telegram to {id}"
+def send_telegram(bot, id, name, message, debug_text):
+    debug_text = f"Sending Telegram to {name}"
     try:
         bot.sendMessage(id, text=message)
         logging.debug(f"{debug_text}")
@@ -138,7 +138,7 @@ def ch_report(time, bot):
         else:
             final += "\nBelum Ada Lokasi yg tercatat"
 
-        send_telegram(bot, ten.telegram_info_id, final, f"TeleRep-send {ten.nama}")
+        send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleRep-send {ten.nama}")
 
         print(f"{ten.nama}")
         print(final)
@@ -174,7 +174,7 @@ def tma_report(time, bot):
         else:
             final += "\nBelum Ada Lokasi yg tercatat"
 
-        send_telegram(bot, ten.telegram_info_id, final, f"TeleRep-send {ten.nama}")
+        send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleRep-send {ten.nama}")
 
         print(final)
         print()
@@ -249,7 +249,7 @@ def periodik_count_report(time):
         else:
             final += "\nBelum Ada Lokasi yg tercatat"
 
-        send_telegram(bot, ten.telegram_info_id, final, f"TeleCount-send {ten.nama}")
+        send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleCount-send {ten.nama}")
         print(final)
         print()
     bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending Daily Count Reports to All Tenants")
