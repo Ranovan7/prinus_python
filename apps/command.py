@@ -194,8 +194,9 @@ def get_periodik_sum(pos, start, end):
         'percent': 0
     }
     for period in periodics:
-        result['rain'] += period.rain
-        result['duration'] += 5
+        if period.rain:
+            result['rain'] += period.rain
+            result['duration'] += 5
         result['percent'] += 1
 
     diff = end - start
