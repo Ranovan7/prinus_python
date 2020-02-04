@@ -73,7 +73,7 @@ def prettydate(d):
 @click.argument('command')
 def telegram(command):
     time = datetime.datetime.now()
-    # time = datetime.datetime.strptime("2020-01-09 08:05:00 UTC", "%Y-%m-%d %H:%M:%S %Z")
+    # time = datetime.datetime.strptime("2020-01-09 13:05:00", "%Y-%m-%d %H:%M:%S")
     if command == 'test':
         print(send_telegram())
     elif command == 'periodik':
@@ -106,6 +106,8 @@ def periodik_report(time):
         tz = ten.timezone or "Asia/Jakarta"
         localtime = utc2local(time, tz=tz)
         if localtime.hour % 2 != 0:
+            print(f"{ten.nama} Not Sending : Odd Hours")
+            logging.debug(f"{ten.nama} Not Sending : Odd Hours")
             continue
         ch_report(ten, time, bot)
         tma_report(ten, time, bot)
