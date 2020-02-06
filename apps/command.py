@@ -63,17 +63,19 @@ def prettydate(d):
         return f"Lebih dari Seminggu Lalu"
     elif diff.days >= 1 and diff.days < 7:
         return f"{diff.days} Hari Lalu"
-    elif s < 3600:
+    elif s > 3600:
+        return f"{round(s/3600)} Jam Lalu"
+    elif s > 60:
         return f"{round(s/60)} Menit Lalu"
     else:
-        return f"{round(s/3600)} Jam Lalu"
+        return f"{round(s)} Detik Lalu"
 
 
 @app.cli.command()
 @click.argument('command')
 def telegram(command):
     time = datetime.datetime.now()
-    # time = datetime.datetime.strptime("2020-01-09 13:05:00", "%Y-%m-%d %H:%M:%S")
+    time = datetime.datetime.strptime("2020-02-06 16:05:00", "%Y-%m-%d %H:%M:%S")
     if command == 'test':
         print(send_telegram())
     elif command == 'periodik':
@@ -90,7 +92,7 @@ def telegram(command):
 def send_telegram(bot, id, name, message, debug_text):
     debug_text = f"Sending Telegram to {name}"
     try:
-        bot.sendMessage(id, text=message)
+        bot.sendMessage(id, text=message, parse_mode='Markdown')
         logging.debug(f"{debug_text}")
     except Exception as e:
         logging.debug(f"{debug_text} Error : {e}")
@@ -117,8 +119,8 @@ def periodik_report(time):
 
 def ch_report(ten, time, bot):
     tz = ten.timezone or "Asia/Jakarta"
-    localtime = utc2local(time, tz=tz)
-    end = datetime.datetime.strptime(f"{localtime.strftime('%Y-%m-%d')} {localtime.hour}:00:00", "%Y-%m-%d %H:%M:%S")
+    end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour}:00:00", "%Y-%m-%d %H:%M:%S")
+    end = utc2local(end, tz=tz)
     start = getstarttime(end)
 
     final = f"*Curah Hujan {end.strftime('%d %b %Y')}*\n"
@@ -194,10 +196,10 @@ def get_periodik_sum(pos, start, end):
         'percent': 0
     }
     for period in periodics:
+        result['percent'] += 1
         if period.rain:
             result['rain'] += period.rain
             result['duration'] += 5
-        result['percent'] += 1
 
     diff = end - start
     percent = (result['percent']/(diff.seconds/300)) * 100
