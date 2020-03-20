@@ -167,7 +167,8 @@ def tma_report(ten, time, bot):
         i += 1
         if latest['periodik']:
             info = f"{latest['periodik'].wlev or '-'}, {latest['latest']}"
-            tgl = f"\n     ({latest['periodik'].sampling.strftime('%d %b %Y, %H:%M')})\n"
+            tgl_wib = utc2local(latest['periodik'].sampling)
+            tgl = f"\n     ({tgl_wib.strftime('%d %b %Y, %H:%M')})\n"
         else:
             info = "Belum Ada Data"
             tgl = "\n"
