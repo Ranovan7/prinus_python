@@ -77,6 +77,8 @@ def telegram(command):
     time = datetime.datetime.now()
     if command == 'test-daily':
         test_daily(time)
+    elif command == 'test-hourly':
+        test_hourly(time)
     elif command == 'periodik':
         print("Sending Periodik Info")
         periodik_report(time)
@@ -110,13 +112,19 @@ def periodik_report(time):
             print(f"{ten.nama} Not Sending : Odd Hours")
             logging.debug(f"{ten.nama} Not Sending : Odd Hours")
             continue
-        ch_report(ten, time, bot)
-        tma_report(ten, time, bot)
+
+        # Curah Hujan
+        final_ch, message = ch_report(ten, time)
+        send_telegram(bot, ten.telegram_info_id, ten.nama, final_ch, f"TeleRep-send {ten.nama}")
+
+        # TMA
+        final_tma, message = tma_report(ten, time)
+        send_telegram(bot, ten.telegram_info_id, ten.nama, final_tma, f"TeleRep-send {ten.nama}")
 
     # bot.sendMessage(app.config['TELEGRAM_TEST_ID'], text="Sending 2-Hourly Reports to All Tenants")
 
 
-def ch_report(ten, time, bot):
+def ch_report(ten, time):
     tz = ten.timezone or "Asia/Jakarta"
     end = datetime.datetime.strptime(f"{time.strftime('%Y-%m-%d')} {time.hour}:00:00", "%Y-%m-%d %H:%M:%S")
     end = utc2local(end, tz=tz)
@@ -145,14 +153,14 @@ def ch_report(ten, time, bot):
     else:
         final += "\nBelum Ada Lokasi yg tercatat"
 
-    send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleRep-send {ten.nama}")
-
     print(f"{ten.nama}")
     print(final)
     print()
 
+    return final, message
 
-def tma_report(ten, time, bot):
+
+def tma_report(ten, time):
     locations = Location.query.filter(
                                 Location.tipe == '2',
                                 Location.tenant_id == ten.id).all()
@@ -179,10 +187,10 @@ def tma_report(ten, time, bot):
     else:
         final += "\nBelum Ada Lokasi yg tercatat"
 
-    send_telegram(bot, ten.telegram_info_id, ten.nama, final, f"TeleRep-send {ten.nama}")
-
     print(final)
     print()
+
+    return final, message
 
 
 def get_periodik_sum(pos, start, end):
@@ -542,35 +550,53 @@ def raw2periodic(raw):
 
 
 def test_daily(time):
-    tz = "Asia/Jakarta"  # "Asia/Jakarta"
-    localtime = utc2local(time, tz=tz)
-    end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 23:56:00", "%Y-%m-%d %H:%M:%S")
-    start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 00:00:00", "%Y-%m-%d %H:%M:%S")
-
-    ten = Tenant.query.get(12)
-    locations = Location.query.filter(
-                                Location.tenant_id == ten.id).all()
-
-    final = '''*%(ten)s*\n*Kehadiran Data*\n%(tgl)s (0:0 - 23:55)
-    ''' % {'ten': ten.nama, 'tgl': start.strftime('%d %b %Y')}
-    message = ""
-
-    i = 0
-    for pos in locations:
-        print(f"--- Location {pos.nama}")
-        i += 1
-        result = get_periodic_arrival(pos, start, end)
-        message += f"\n{i} {pos.nama} ({result['tipe']}) : {result['percent']}%"
-
-    if message:
-        final += message
-    else:
-        final += "\nBelum Ada Lokasi yg tercatat"
-
     bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
-    send_telegram(bot, app.config['TELEGRAM_TEST_ID'], "Test", final, f"Testing Only")
-    print(f"{localtime} : {final}")
-    print()
+
+    tenants = Tenant.query.order_by(Tenant.id).all()
+
+    for ten in tenants:
+        print(f"Calculating for tenant {ten.nama} ({ten.id})")
+        # param tz should be entered if tenant have timezone
+        # log.tenant.timezone
+        tz = ten.timezone or "Asia/Jakarta"  # "Asia/Jakarta"
+        localtime = utc2local(time, tz=tz)
+        end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 23:56:00", "%Y-%m-%d %H:%M:%S")
+        start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 00:00:00", "%Y-%m-%d %H:%M:%S")
+
+        final = '''*%(ten)s*\n*Kehadiran Data*\n%(tgl)s (0:0 - 23:55)
+        ''' % {'ten': ten.nama, 'tgl': start.strftime('%d %b %Y')}
+        message = ""
+
+        locations = Location.query.filter(
+                                    Location.tenant_id == ten.id).all()
+
+        i = 0
+        for pos in locations:
+            print(f"--- Location {pos.nama}")
+            i += 1
+            result = get_periodic_arrival(pos, start, end)
+            message += f"\n{i} {pos.nama} ({result['tipe']}) : {result['percent']}%"
+
+        if message:
+            final += message
+
+            send_telegram(bot, app.config['TELEGRAM_TEST_ID'], "Test", final, f"Testing Only")
+            print(f"{localtime} : {final}")
+            print()
+
+
+def test_hourly(time):
+    bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
+    tenants = Tenant.query.order_by(Tenant.id).all()
+
+    for ten in tenants:
+        final_ch, message_ch = ch_report(ten, time)
+        if message_ch:
+            send_telegram(bot, app.config['TELEGRAM_TEST_ID'], "Hourly Test", final_ch, f"Hourly Test")
+
+        final_tma, message_tma = tma_report(ten, time)
+        if message_tma:
+            send_telegram(bot, app.config['TELEGRAM_TEST_ID'], "Hourly Test", final_tma, f"Hourly Test")
 
 
 if __name__ == '__main__':
