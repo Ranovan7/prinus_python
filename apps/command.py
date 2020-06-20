@@ -75,9 +75,8 @@ def prettydate(d):
 @click.argument('command')
 def telegram(command):
     time = datetime.datetime.now()
-    # time = datetime.datetime.strptime("2020-02-06 16:05:00", "%Y-%m-%d %H:%M:%S")
-    if command == 'test':
-        print(send_telegram())
+    if command == 'test-daily':
+        test_daily(time)
     elif command == 'periodik':
         print("Sending Periodik Info")
         periodik_report(time)
@@ -230,6 +229,7 @@ def periodik_count_report(time):
     tenants = Tenant.query.order_by(Tenant.id).all()
 
     for ten in tenants:
+        print(f"Calculating for tenant {ten.nama} ({ten.id})")
         # param tz should be entered if tenant have timezone
         # log.tenant.timezone
         tz = ten.timezone or "Asia/Jakarta"  # "Asia/Jakarta"
@@ -244,11 +244,11 @@ def periodik_count_report(time):
         message = ""
 
         locations = Location.query.filter(
-                                    # Location.tipe == '1',
                                     Location.tenant_id == ten.id).all()
 
         i = 0
         for pos in locations:
+            print(f"--- Location {pos.nama}")
             i += 1
             result = get_periodic_arrival(pos, start, end)
             message += f"\n{i} {pos.nama} ({result['tipe']}) : {result['percent']}%"
@@ -539,6 +539,38 @@ def raw2periodic(raw):
     except IntegrityError:
         print(obj.get('device_sn'), obj.get('lokasi_id'), obj.get('sampling'))
         db.session.rollback()
+
+
+def test_daily(time):
+    tz = "Asia/Jakarta"  # "Asia/Jakarta"
+    localtime = utc2local(time, tz=tz)
+    end = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 23:56:00", "%Y-%m-%d %H:%M:%S")
+    start = datetime.datetime.strptime(f"{localtime.year}-{localtime.month}-{time.day - 1} 00:00:00", "%Y-%m-%d %H:%M:%S")
+
+    ten = Tenant.query.get(12)
+    locations = Location.query.filter(
+                                Location.tenant_id == ten.id).all()
+
+    final = '''*%(ten)s*\n*Kehadiran Data*\n%(tgl)s (0:0 - 23:55)
+    ''' % {'ten': ten.nama, 'tgl': start.strftime('%d %b %Y')}
+    message = ""
+
+    i = 0
+    for pos in locations:
+        print(f"--- Location {pos.nama}")
+        i += 1
+        result = get_periodic_arrival(pos, start, end)
+        message += f"\n{i} {pos.nama} ({result['tipe']}) : {result['percent']}%"
+
+    if message:
+        final += message
+    else:
+        final += "\nBelum Ada Lokasi yg tercatat"
+
+    bot = Bot(token=app.config['PRINUSBOT_TOKEN'])
+    send_telegram(bot, app.config['TELEGRAM_TEST_ID'], "Test", final, f"Testing Only")
+    print(f"{localtime} : {final}")
+    print()
 
 
 if __name__ == '__main__':
