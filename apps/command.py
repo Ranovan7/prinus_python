@@ -362,6 +362,14 @@ def subscribe_topic():
 
 
 @app.cli.command()
+def check_listener():
+    if not os.path.exists(os.path.join(os.getcwd(), "listener.pid")):
+        os.system(f"flask listen start")
+    else:
+        print("Listener already listening")
+
+
+@app.cli.command()
 def fetch_logger():
     res = requests.get(URL, auth=bws_sul2)
 
