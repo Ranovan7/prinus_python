@@ -431,15 +431,16 @@ def fetch_periodic(sn, sampling):
     res = requests.get(URL + '/' + sn + '?robot=1' + sampling_param, auth=bws_sul2)
     data = json.loads(res.text)
     for d in data:
-        content = Raw(content=d)
-        db.session.add(content)
+        # content = Raw(content=d)
+        # db.session.add(content)
         try:
-            db.session.commit()
-            recordperiodic(d)
+            # db.session.commit()
+            result = recordperiodic(d)
+            print(result)
         except Exception as e:
             db.session.rollback()
             print("ERROR:", e)
-        print(d.get('sampling'), d.get('temperature'))
+        # print(d.get('sampling'), d.get('temperature'))
 
 
 @app.cli.command()
@@ -459,7 +460,7 @@ def fetch_periodic_today(sampling):
             logging.debug(f"!!Fetch Periodic ({d.sn}) ERROR : {e}")
 
 
-def recordperiodic(raw):
+def recordperiodic(raw, is_new=True):
     sn = str(raw.get('device').split('/')[1])
     try:
         db.session.rollback()
@@ -492,13 +493,14 @@ def recordperiodic(raw):
                         up_s=datetime.datetime.fromtimestamp(raw.get('up_since')),
                         ts_a=datetime.datetime.fromtimestamp(raw.get('time_set_at')),
                     )
-                    content = Raw(content=raw)
+                    if is_new:
+                        content = Raw(content=raw)
+                        db.session.add(content)
 
-                    db.session.add(content)
                     db.session.add(new_periodik)
                     # db.session.flush()
                     db.session.commit()
-                    return f"Logger {logger.sn} data recorded, up since {up_since}"  # on {logger.location.nama}
+                    return f"Logger {logger.sn} data recorded, sampling {sampling}"  # on {logger.location.nama}
                 except Exception as e:
                     db.session.rollback()
                     db.session.flush()
